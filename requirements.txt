@@ -1,0 +1,14 @@
+# Core Computer Vision & Image Handling
+opencv-python>=4.8.0
+numpy>=1.23.0
+scipy>=1.10.0
+matplotlib>=3.7.0
+
+# Deep Learning Inference & Object Detection (OpenCV DNN & ONNX)
+onnx>=1.14.0
+onnxruntime>=1.15.0
+
+# Optional Frameworks
+ultralytics>=8.0.0
+torch>=2.0.0
+
