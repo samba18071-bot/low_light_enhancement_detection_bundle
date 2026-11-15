@@ -2,7 +2,7 @@
 
 [![Python 3.9+](https://img.shields.io/badge/Python-3.9%2B-blue.svg?logo=python&logoColor=white)](https://www.python.org/)
 [![OpenCV](https://img.shields.io/badge/OpenCV-5.0%20%7C%204.x-5C3EE8.svg?logo=opencv&logoColor=white)](https://opencv.org/)
-[![YOLOv8](https://img.shields.io/badge/YOLOv8-ONNX%20%26%20PyTorch-00FFFF.svg?logo=ultralytics&logoColor=black)](https://github.com/ultralytics/ultralytics)
+[![YOLO11](https://img.shields.io/badge/YOLO11-ONNX%20%26%20PyTorch-00FFFF.svg?logo=ultralytics&logoColor=black)](https://github.com/ultralytics/ultralytics)
 [![PyTorch](https://img.shields.io/badge/PyTorch-2.x-EE4C2C.svg?logo=pytorch&logoColor=white)](https://pytorch.org/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Real-Time CPU](https://img.shields.io/badge/Performance-30%2B%20FPS%20CPU-brightgreen.svg)]()
@@ -126,7 +126,8 @@ low_light_enhancement_detection_bundle/
 │   └── video_pipeline.py                                     # Video processor with tracker
 │
 ├── models/                                                   # Neural Network Weights
-│   ├── yolov8n.onnx                                          # Lightweight ONNX COCO model (80 cls)
+│   ├── yolo11n.onnx                                          # Lightweight ONNX COCO model (80 cls)
+│   ├── yolo11n.pt                                            # PyTorch weights for YOLO11n (COCO 80 cls)
 │   ├── yolov8n-oiv7.pt                                       # Open Images V7 model (601 cls)
 │   ├── yolov8n-oiv7.onnx                                     # Open Images V7 ONNX export
 │   └── open_images_classes.json                              # Complete 601 Open Images class map
@@ -183,7 +184,7 @@ pipeline = UnifiedPipeline(
     enhancer_type="adaptive",       # 'adaptive' or 'generative'
     denoise_method="bilateral",     # 'bilateral' for real-time video
     engine="opencv_dnn",            # 'opencv_dnn' (pure CPU) or 'ultralytics'
-    model_path="models/yolov8n.onnx",
+    model_path="models/yolo11n.onnx",
     conf_threshold=0.20
 )
 

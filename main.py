@@ -53,7 +53,7 @@ def parse_args():
     )
     parser.add_argument(
         "--model", default=None, type=str,
-        help="Path to object detector model (.onnx or .pt). Defaults to models/yolov8n.onnx."
+        help="Path to object detector model (.onnx or .pt). Defaults to models/yolo11n.onnx."
     )
     parser.add_argument(
         "--conf", default=0.35, type=float,

@@ -32,7 +32,7 @@ CLASS_COLORS = [
 
 class ObjectDetector:
     """
-    OpenCV DNN-powered object detector supporting YOLOv8 ONNX models.
+    OpenCV DNN-powered object detector supporting YOLO11 / YOLOv8 ONNX models.
     Can also fall back to Ultralytics YOLO if requested.
     """
 
@@ -60,11 +60,25 @@ class ObjectDetector:
 
         # Determine default model path if not specified
         if model_path is None:
-            default_onnx = os.path.join(os.path.dirname(__file__), "..", "models", "yolov8n.onnx")
-            if os.path.exists(default_onnx):
-                self.model_path = os.path.abspath(default_onnx)
+            models_dir = os.path.join(os.path.dirname(__file__), "..", "models")
+            if self.engine == "ultralytics":
+                cand_pt = os.path.join(models_dir, "yolo11n.pt")
+                cand_onnx = os.path.join(models_dir, "yolo11n.onnx")
+                if os.path.exists(cand_pt):
+                    self.model_path = os.path.abspath(cand_pt)
+                elif os.path.exists(cand_onnx):
+                    self.model_path = os.path.abspath(cand_onnx)
+                else:
+                    self.model_path = "yolo11n.pt"
             else:
-                self.model_path = "yolov8n.onnx"
+                cand_onnx = os.path.join(models_dir, "yolo11n.onnx")
+                cand_onnx_v8 = os.path.join(models_dir, "yolov8n.onnx")
+                if os.path.exists(cand_onnx):
+                    self.model_path = os.path.abspath(cand_onnx)
+                elif os.path.exists(cand_onnx_v8):
+                    self.model_path = os.path.abspath(cand_onnx_v8)
+                else:
+                    self.model_path = "yolo11n.onnx"
         else:
             self.model_path = model_path
 
@@ -75,12 +89,14 @@ class ObjectDetector:
         if self.engine == "opencv_dnn":
             if not os.path.exists(self.model_path):
                 # Check current directory
-                if os.path.exists("yolov8n.onnx"):
+                if os.path.exists("yolo11n.onnx"):
+                    self.model_path = "yolo11n.onnx"
+                elif os.path.exists("yolov8n.onnx"):
                     self.model_path = "yolov8n.onnx"
                 else:
                     raise FileNotFoundError(
                         f"ONNX model file not found at {self.model_path}. "
-                        "Please export or provide a valid yolov8n.onnx file."
+                        "Please export or provide a valid yolo11n.onnx file."
                     )
             # Load OpenCV Deep Neural Network
             self.net = cv2.dnn.readNetFromONNX(self.model_path)
