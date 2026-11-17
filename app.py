@@ -173,8 +173,43 @@ with st.sidebar:
         help="YOLO11n offers the best low-light recall with higher FPS on CPU."
     )
     
-    conf_thresh = st.slider("Confidence Threshold", min_value=0.05, max_value=0.90, value=0.20, step=0.05)
+    st.markdown("### 🔬 Minute & Small Target Sensitivity")
+    sensitivity_preset = st.selectbox(
+        "Target Sensitivity Preset",
+        [
+            "🔬 Minute & Distant Targets (Ultra-Sensitive, Conf: 0.08)",
+            "🎯 Balanced Standard (Conf: 0.20)",
+            "🛡️ High Precision (Conf: 0.45)",
+            "⚙️ Custom Slider"
+        ],
+        index=0,
+        help="Minute Targets preset enables low-confidence detection and sliced inference to pick up tiny distant objects, people, lights, and particles."
+    )
+
+    if "Minute" in sensitivity_preset:
+        default_conf = 0.08
+        default_sliced = True
+        default_particles = True
+    elif "Balanced" in sensitivity_preset:
+        default_conf = 0.20
+        default_sliced = False
+        default_particles = False
+    elif "High" in sensitivity_preset:
+        default_conf = 0.45
+        default_sliced = False
+        default_particles = False
+    else:
+        default_conf = 0.12
+        default_sliced = True
+        default_particles = False
+
+    conf_thresh = st.slider("Confidence Threshold", min_value=0.01, max_value=0.90, value=default_conf, step=0.01, help="Lower confidence allows detection of very minute/dark targets.")
     nms_thresh = st.slider("IoU / NMS Threshold", min_value=0.10, max_value=0.80, value=0.45, step=0.05)
+
+    with st.expander("🔬 Micro Particle & Slicing Options", expanded=("Minute" in sensitivity_preset or "Custom" in sensitivity_preset)):
+        enable_sliced = st.checkbox("🔍 Sliced Tiled Inference (High-Res Patches)", value=default_sliced, help="Breaks frame into overlapping high-resolution tiles so minute targets are enlarged and resolved by YOLO.")
+        enable_particles = st.checkbox("✨ Detect Minute Particles & Point Lights", value=default_particles, help="Morphological saliency detector for micro specks, dust, point-source lights, and reflections.")
+        particle_thresh = st.slider("Particle Contrast Sensitivity", min_value=15, max_value=80, value=30, help="Lower = detects dimmer/smaller particles.")
     
     st.markdown("---")
     st.markdown("### 🎨 Illumination & Denoising")
@@ -204,6 +239,9 @@ try:
     detector = load_cached_detector(model_choice, engine_name, model_file)
     detector.conf_threshold = conf_thresh
     detector.nms_threshold = nms_thresh
+    detector.sliced = enable_sliced
+    detector.detect_particles_enabled = enable_particles
+    detector.particle_prominence = particle_thresh
 except Exception as e:
     st.error(f"Failed to load detector {model_choice}: {e}")
     st.stop()

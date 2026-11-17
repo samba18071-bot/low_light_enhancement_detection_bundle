@@ -43,6 +43,10 @@ class ObjectDetector:
         nms_threshold: float = 0.45,
         engine: str = "opencv_dnn",
         target_size: Tuple[int, int] = (640, 640),
+        sliced: bool = False,
+        slice_size: Tuple[int, int] = (480, 480),
+        detect_particles: bool = False,
+        particle_prominence: int = 35,
     ):
         """
         Args:
@@ -51,12 +55,20 @@ class ObjectDetector:
             nms_threshold: Non-Maximum Suppression IoU threshold.
             engine: 'opencv_dnn' (pure OpenCV inference) or 'ultralytics'.
             target_size: Input resolution (width, height) for neural network.
+            sliced: Whether to enable sliced tiled inference for minute / distant objects.
+            slice_size: Resolution of tiles for sliced inference.
+            detect_particles: Whether to detect minute luminous particles / specks.
+            particle_prominence: Minimum local contrast threshold for particle detection.
         """
         self.conf_threshold = conf_threshold
         self.nms_threshold = nms_threshold
         self.engine = engine.lower()
         self.target_size = target_size
         self.classes = COCO_CLASSES
+        self.sliced = sliced
+        self.slice_size = slice_size
+        self.detect_particles_enabled = detect_particles
+        self.particle_prominence = particle_prominence
 
         # Determine default model path if not specified
         if model_path is None:
@@ -147,23 +159,9 @@ class ObjectDetector:
         img = cv2.copyMakeBorder(img, top, bottom, left, right, cv2.BORDER_CONSTANT, value=color)
         return img, r, (dw, dh)
 
-    def detect(self, frame_bgr: np.ndarray) -> List[Dict[str, Any]]:
+    def _detect_single_frame(self, frame_bgr: np.ndarray) -> List[Dict[str, Any]]:
         """
-        Runs object detection on the input frame.
-
-        Args:
-            frame_bgr: BGR uint8 image (H, W, 3).
-
-        Returns:
-            List of detected objects: [
-                {
-                    'bbox': [x, y, w, h],
-                    'box_xyxy': [x1, y1, x2, y2],
-                    'confidence': float,
-                    'class_id': int,
-                    'class_name': str
-                }, ...
-            ]
+        Runs neural network inference on a single frame crop.
         """
         orig_h, orig_w = frame_bgr.shape[:2]
 
@@ -227,13 +225,11 @@ class ObjectDetector:
 
         for i in range(len(filtered_scores)):
             cx, cy, w, h = filtered_boxes[i]
-            # Coordinates in letterboxed 640x640 space
             x1 = (cx - w / 2.0 - dw) / ratio
             y1 = (cy - h / 2.0 - dh) / ratio
             x2 = (cx + w / 2.0 - dw) / ratio
             y2 = (cy + h / 2.0 - dh) / ratio
 
-            # Clip to image boundaries
             x1 = max(0, min(orig_w - 1, int(round(x1))))
             y1 = max(0, min(orig_h - 1, int(round(y1))))
             x2 = max(0, min(orig_w - 1, int(round(x2))))
@@ -271,6 +267,128 @@ class ObjectDetector:
 
         return detections
 
+    def detect_particles(
+        self,
+        frame_bgr: np.ndarray,
+        min_size: int = 1,
+        max_size: int = 28,
+        min_prominence: Optional[int] = None
+    ) -> List[Dict[str, Any]]:
+        """
+        Morphological saliency detector for minute particles, bright specks, sparks, and point light sources.
+        """
+        prominence = min_prominence if min_prominence is not None else self.particle_prominence
+        lab = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2LAB)
+        l_channel = lab[:, :, 0]
+
+        # Top-Hat filter isolates micro bright structures against dark background
+        kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (15, 15))
+        tophat = cv2.morphologyEx(l_channel, cv2.MORPH_TOPHAT, kernel)
+
+        _, thresh = cv2.threshold(tophat, prominence, 255, cv2.THRESH_BINARY)
+        contours, _ = cv2.findContours(thresh, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+
+        particles = []
+        for cnt in contours:
+            x, y, w, h = cv2.boundingRect(cnt)
+            if min_size <= max(w, h) <= max_size:
+                roi = tophat[y:y+h, x:x+w]
+                score = float(np.mean(roi)) / 255.0
+                particles.append({
+                    "bbox": [x, y, w, h],
+                    "box_xyxy": [x, y, x + w, y + h],
+                    "confidence": min(0.99, float(score * 2.2)),
+                    "class_id": 999,
+                    "class_name": "particle"
+                })
+        return particles
+
+    def detect_sliced(
+        self,
+        frame_bgr: np.ndarray,
+        slice_size: Optional[Tuple[int, int]] = None,
+        overlap: float = 0.25
+    ) -> List[Dict[str, Any]]:
+        """
+        Sliced Aided Hyper Inference (SAHI) style tiled inference.
+        Breaks the image into high-resolution overlapping tiles so minute/distant
+        particles and objects are resolved clearly by the neural network.
+        """
+        H, W = frame_bgr.shape[:2]
+        sw, sh = slice_size if slice_size is not None else self.slice_size
+
+        # Don't slice if image is already smaller than or equal to slice size
+        if H <= sh and W <= sw:
+            return self._detect_single_frame(frame_bgr)
+
+        step_x = max(100, int(sw * (1.0 - overlap)))
+        step_y = max(100, int(sh * (1.0 - overlap)))
+
+        all_detections = []
+        # 1. Full frame pass to capture large/global context
+        all_detections.extend(self._detect_single_frame(frame_bgr))
+
+        # 2. Overlapping slice passes for minute details
+        for y in range(0, max(1, H - sh + step_y), step_y):
+            y_end = min(H, y + sh)
+            y_start = max(0, y_end - sh)
+            for x in range(0, max(1, W - sw + step_x), step_x):
+                x_end = min(W, x + sw)
+                x_start = max(0, x_end - sw)
+
+                crop = frame_bgr[y_start:y_end, x_start:x_end]
+                crop_dets = self._detect_single_frame(crop)
+                for d in crop_dets:
+                    bx, by, bw, bh = d["bbox"]
+                    gx = bx + x_start
+                    gy = by + y_start
+                    all_detections.append({
+                        "bbox": [gx, gy, bw, bh],
+                        "box_xyxy": [gx, gy, gx + bw, gy + bh],
+                        "confidence": d["confidence"],
+                        "class_id": d["class_id"],
+                        "class_name": d["class_name"]
+                    })
+
+        if not all_detections:
+            return []
+
+        # 3. Global NMS deduplication
+        boxes = [d["bbox"] for d in all_detections]
+        confs = [d["confidence"] for d in all_detections]
+        indices = cv2.dnn.NMSBoxes(boxes, confs, self.conf_threshold, self.nms_threshold)
+
+        final_dets = []
+        if len(indices) > 0:
+            for idx in indices.flatten():
+                final_dets.append(all_detections[idx])
+        return final_dets
+
+    def detect(
+        self,
+        frame_bgr: np.ndarray,
+        sliced: Optional[bool] = None,
+        detect_particles: Optional[bool] = None
+    ) -> List[Dict[str, Any]]:
+        """
+        Unified detection method supporting full-frame, sliced high-res, and minute particle detection.
+        """
+        use_sliced = sliced if sliced is not None else self.sliced
+        use_particles = detect_particles if detect_particles is not None else self.detect_particles_enabled
+
+        # Neural object detection
+        if use_sliced:
+            detections = self.detect_sliced(frame_bgr)
+        else:
+            detections = self._detect_single_frame(frame_bgr)
+
+        # Micro particle detection
+        if use_particles:
+            particles = self.detect_particles(frame_bgr)
+            detections.extend(particles)
+
+        return detections
+
     def draw_detections(
         self,
         frame_bgr: np.ndarray,
@@ -287,7 +405,12 @@ class ObjectDetector:
             cname = det["class_name"]
             conf = det["confidence"]
             track_id = det.get("track_id")
-            color = CLASS_COLORS[(track_id * 37) % len(CLASS_COLORS)] if track_id else CLASS_COLORS[cid % len(CLASS_COLORS)]
+            if cname == "particle":
+                color = (0, 240, 255)  # High-visibility neon yellow for minute particles
+            elif track_id:
+                color = CLASS_COLORS[(track_id * 37) % len(CLASS_COLORS)]
+            else:
+                color = CLASS_COLORS[cid % len(CLASS_COLORS)]
 
             # Draw rounded or semi-transparent bounding box
             cv2.rectangle(annotated, (x, y), (x + w, y + h), color, 2)
