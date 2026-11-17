@@ -447,8 +447,26 @@ elif selected_input_type == "video" and input_video_path is not None:
     vcol3.metric("Video FPS", f"{fps:.1f}")
     vcol4.metric("Estimated Duration", f"{total_frames / max(1.0, fps):.1f}s")
     
-    # Frame limit option for fast testing
-    max_frames_to_process = st.slider("Process up to N frames (drag slider to limit for quick preview)", min_value=15, max_value=max(15, total_frames), value=min(60, total_frames))
+    # Full Video vs Quick Preview option
+    process_mode = st.radio(
+        "Processing Scope",
+        [
+            "🎬 Full Video (Process entire video from start to finish)",
+            "⚡ Quick Preview (Process first N frames only)"
+        ],
+        index=0,
+        help="Full Video processes every single frame until the end of the video. Quick Preview is useful for fast parameter tuning."
+    )
+    
+    if "Quick Preview" in process_mode:
+        max_frames_to_process = st.slider(
+            "Number of frames to process",
+            min_value=15,
+            max_value=max(15, total_frames),
+            value=min(60, max(15, total_frames))
+        )
+    else:
+        max_frames_to_process = None  # None means process 100% of all frames!
     
     if st.button("🚀 Start Video Enhancement & Tracking", type="primary"):
         prog_bar = st.progress(0, text="Initializing Video Pipeline...")
@@ -497,10 +515,17 @@ elif selected_input_type == "video" and input_video_path is not None:
         total_detections_count = 0
         preview_placeholder = st.empty()
         
-        while frame_idx < max_frames_to_process:
-            ret, frame = cap.read()
-            if not ret:
+        # Determine total target frames for progress bar
+        target_frames = max_frames_to_process if max_frames_to_process is not None else (total_frames if total_frames > 0 else 100)
+        
+        while True:
+            # Check frame cap if running in Quick Preview mode
+            if max_frames_to_process is not None and frame_idx >= max_frames_to_process:
                 break
+                
+            ret, frame = cap.read()
+            if not ret or frame is None:
+                break  # Reached end of video stream
                 
             frame_idx += 1
             if (frame.shape[1], frame.shape[0]) != (proc_w, proc_h):
@@ -536,36 +561,41 @@ elif selected_input_type == "video" and input_video_path is not None:
                 )
                 writer.write(canvas)
                 
-                # Live thumbnail preview every 10 frames
-                if frame_idx % 10 == 0 or frame_idx == 1:
-                    preview_placeholder.image(cv2.cvtColor(canvas, cv2.COLOR_BGR2RGB), use_container_width=True, caption=f"Processing Frame {frame_idx}/{max_frames_to_process}")
+                # Live thumbnail preview every 15 frames
+                if frame_idx % 15 == 0 or frame_idx == 1:
+                    preview_placeholder.image(cv2.cvtColor(canvas, cv2.COLOR_BGR2RGB), use_container_width=True, caption=f"Processing Frame {frame_idx}/{target_frames if target_frames > 0 else '...'}")
             else:
                 writer.write(enh_annotated)
-                if frame_idx % 10 == 0 or frame_idx == 1:
-                    preview_placeholder.image(cv2.cvtColor(enh_annotated, cv2.COLOR_BGR2RGB), use_container_width=True, caption=f"Processing Frame {frame_idx}/{max_frames_to_process}")
+                if frame_idx % 15 == 0 or frame_idx == 1:
+                    preview_placeholder.image(cv2.cvtColor(enh_annotated, cv2.COLOR_BGR2RGB), use_container_width=True, caption=f"Processing Frame {frame_idx}/{target_frames if target_frames > 0 else '...'}")
                 
-            prog = int((frame_idx / max_frames_to_process) * 100)
             elapsed = time.time() - t0
             cur_fps = frame_idx / max(0.001, elapsed)
-            prog_bar.progress(prog, text=f"Processed frame {frame_idx}/{max_frames_to_process} ({cur_fps:.1f} FPS)")
+            if target_frames > 0:
+                prog = min(100, int((frame_idx / target_frames) * 100))
+                prog_bar.progress(prog, text=f"Processing frame {frame_idx}/{target_frames} ({cur_fps:.1f} FPS)")
+            else:
+                prog_bar.progress(min(99, frame_idx % 100), text=f"Processing frame {frame_idx} ({cur_fps:.1f} FPS)")
             
         cap.release()
         writer.release()
         total_time = time.time() - t0
         
-        st.success(f"🎉 Video enhancement & tracking completed in {total_time:.1f}s ({frame_idx / total_time:.1f} FPS)!")
+        prog_bar.progress(100, text=f"Completed all {frame_idx} frames in {total_time:.1f}s ({frame_idx / max(0.001, total_time):.1f} FPS)!")
+        st.success(f"🎉 Complete video enhancement & tracking finished: {frame_idx} total frames processed!")
         
-        # Display Video
-        st.video(out_video_path)
+        # Display Video with binary buffer
+        with open(out_video_path, "rb") as vf:
+            video_bytes = vf.read()
+        st.video(video_bytes, format="video/mp4")
         
         # Download Video Button
-        with open(out_video_path, "rb") as vf:
-            st.download_button(
-                label="📥 Download Enhanced Video (.mp4)",
-                data=vf.read(),
-                file_name=f"{input_name}_enhanced.mp4",
-                mime="video/mp4"
-            )
+        st.download_button(
+            label="📥 Download Enhanced Video (.mp4)",
+            data=video_bytes,
+            file_name=f"{input_name}_enhanced.mp4",
+            mime="video/mp4"
+        )
 
 else:
     # Empty state guidance
