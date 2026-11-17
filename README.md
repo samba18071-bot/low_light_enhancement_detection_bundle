@@ -100,7 +100,6 @@ Raw Low-Light ──► [Adaptive Noise &] ─┼─── Highlight Guard Prote
 
 ```text
 low_light_enhancement_detection_bundle/
-├── app.py                                                    # Interactive Streamlit Web UI
 ├── adaptive_low_light_image_video_enhancement.ipynb          # End-to-end interactive notebook
 ├── adaptive_low_light_image_video_enhancement_modular.ipynb  # Modular architecture & benchmarks
 ├── main.py                                                   # Command-line interface (CLI)
@@ -158,22 +157,7 @@ cd low_light_enhancement_detection_bundle
 pip install -r requirements.txt
 ```
 
-### 2. Interactive Streamlit Web Application
-
-Launch the full-featured browser dashboard:
-
-```bash
-streamlit run app.py
-```
-
-Features included:
-- **Image & Video Processing**: Upload nocturnal imagery/videos or test with 1-click curated presets (ExDark, LIME, DICM, nocturnal video).
-- **Live Webcam Support**: Real-time camera snapshot enhancement and object detection.
-- **Model Switching**: Toggle between YOLO11n (ONNX / PyTorch), YOLOv8n, and Open Images V7.
-- **Diagnostics**: Real-time luminance histogram shift, noise $\sigma$ estimation, dynamic gamma lookup tables, and detection recall gain.
-- **One-Click Export**: Download enhanced media, side-by-side comparison canvases, and JSON metrics.
-
-### 3. Command Line Interface (CLI)
+### 2. Command Line Interface (CLI)
 
 #### Process a Low-Light Image with Object Detection:
 ```bash
@@ -190,7 +174,7 @@ python main.py --input data/real_night_video.mp4 --output outputs/enhanced_video
 python main.py --input your_video.mp4 --model models/yolov8n-oiv7.pt --conf 0.15 --compare
 ```
 
-### 4. Python API Integration
+### 3. Python API Integration
 
 ```python
 from pipeline.unified_pipeline import UnifiedPipeline
