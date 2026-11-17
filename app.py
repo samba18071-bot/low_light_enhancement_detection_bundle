@@ -508,7 +508,7 @@ elif selected_input_type == "video" and input_video_path is not None:
                 
             raw_frame = frame.copy()
             params = select_adaptive_parameters(raw_frame)
-            smoothed_params = video_pipeline.smoother.update(raw_frame, params)
+            smoothed_params = video_pipeline.smoother.update(params, raw_frame)
             
             if video_pipeline.enhancer_type == "generative":
                 enhanced_frame = video_pipeline.generative_enhancer.enhance(raw_frame)

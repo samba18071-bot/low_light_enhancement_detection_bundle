@@ -45,7 +45,12 @@ class TemporalSmoother:
     def update(self, current_params: Dict[str, Any], frame_bgr: np.ndarray) -> Dict[str, Any]:
         """
         Updates internal state with new frame parameters and returns temporally smoothed parameters.
+        Accepts arguments in either (params, frame) or (frame, params) order.
         """
+        # Gracefully handle swapped argument order
+        if isinstance(current_params, np.ndarray) and isinstance(frame_bgr, dict):
+            current_params, frame_bgr = frame_bgr, current_params
+
         self.frame_index += 1
         current_hist = self.compute_histogram(frame_bgr)
         cut_detected = self.is_scene_cut(current_hist)
